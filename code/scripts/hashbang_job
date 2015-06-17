@@ -1,0 +1,36 @@
+#!/bin/bash
+
+function usage()
+{
+  printf "Usage:\n\nhashbang_job <jar> <class_name> <input_file> <output_dir>\n\n"
+}
+
+if [ "$#" -ne 4 ] ;
+then
+  usage
+  exit 1
+fi
+
+HASHBANG_HOME="/home/ec2-user"
+JAR_DIR="/tmp/hashbang/jar"
+
+CMD="rm -rf $JAR_DIR/* ; yes | unzip $HASHBANG_HOME/hashbang_job.jar -d $JAR_DIR/ 2>&1 > /dev/null "
+
+CLASSPATH="$HASHBANG_HOME/mr_framework.jar:$HASHBANG_HOME/hashbang_job.jar"
+JAVA_CMD="java -d64 -cp $CLASSPATH $2 $HASHBANG_HOME/input $4"
+
+test -r $JAR_DIR || mkdir -p $JAR_DIR
+cp $1 $JAR_DIR/hashbang_job.jar
+#cp $3 $JAR_DIR/input
+
+echo "Copying job to all nodes"
+pscp -h ~/.ec2/nodes -l ec2-user -x "-C" $JAR_DIR/hashbang_job.jar $HASHBANG_HOME/ > /dev/null &&
+pssh -h ~/.ec2/nodes -l ec2-user "$CMD" > /dev/null
+
+JOB_TRACKER=$(cat ~/.ec2/nodes | head -n 1)
+SSH_OPTS="-q -oStrictHostKeyChecking=no -oUserKnownHostsFile=/dev/null "
+#scp $SSH_OPTS $JAR_DIR/input ec2-user@$JOB_TRACKER:~/input
+echo "Fetching input file from $3"
+ssh $SSH_OPTS -l ec2-user $JOB_TRACKER "rm -rf $HASHBANG_HOME/input 2>&1 > /dev/null ; wget -q '$3' -O $HASHBANG_HOME/input > /dev/null"
+echo "Starting job now"
+ssh $SSH_OPTS -l ec2-user $JOB_TRACKER "$JAVA_CMD"
